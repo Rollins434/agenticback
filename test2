@@ -1,0 +1,46 @@
+const axios = require('axios');
+
+exports.streamChatFromChainlit = async (req, res) => {
+  try {
+    console.log('🔁 Incoming request to /api/fpa/chat');
+    console.log('📥 Request body:', req.body);
+
+    const fastApiUrl = 'http://localhost:8000/chat/stream'; // or wherever Chainlit is hosted
+
+    // forward the cookie if available
+    const accessToken = req.cookies?.access_token || req.headers['x-access-token'];
+
+    if (!accessToken) {
+      console.warn('⚠️ No access token found in cookies or headers');
+    } else {
+      console.log('🔑 Access token found, forwarding to FastAPI');
+    }
+
+    console.log(`🌍 Sending POST request to ${fastApiUrl}...`);
+
+    const response = await axios.post(fastApiUrl, req.body, {
+      headers: {
+        Cookie: `access_token=${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      responseType: 'stream', // Enable streaming response
+    });
+
+    console.log('✅ Successfully connected to FastAPI. Streaming response to client...');
+
+    // Handle stream piping
+    response.data.pipe(res);
+
+    response.data.on('end', () => {
+      console.log('✅ Stream ended');
+    });
+
+    response.data.on('error', (error) => {
+      console.error('❌ Stream error:', error);
+    });
+
+  } catch (err) {
+    console.error('🔥 Error proxying to FastAPI:', err.message);
+    res.status(500).json({ error: 'Error proxying to FastAPI' });
+  }
+};
