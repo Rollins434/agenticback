@@ -1,88 +1,99 @@
-const express = require('express');
-const cors = require('cors');
-const cookieParser = require('cookie-parser');
-require('dotenv').config();
+import React, { useState, useEffect, useRef } from 'react';
+import api from './api';
 
-const authRoutes = require('./routes/authRoutes');
-const chatRoutes = require('./routes/chatRoutes');
+const Chat: React.FC = () => {
+  const [query, setQuery] = useState('');
+  const [messages, setMessages] = useState<string[]>([]);
+  const [chatState, setChatState] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+  const sendMessage = async () => {
+    if (!query.trim()) return;
 
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use(cookieParser());
+    const payload: any = { query };
+    if (chatState) payload.state = chatState;
 
-app.use('/api', authRoutes);
-app.use('/api', chatRoutes);
+    try {
+      const res = await api.post('/chat', payload, {
+        headers: {
+          // Optional if using cookie-based auth
+          // Authorization: `Bearer ${token}`
+        }
+      });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
-});
+      const { response, state, session_id } = res.data;
 
-Auth COntroller
-const apiClient = require('../utils/apiClient');
+      // Add user + bot message
+      setMessages((prev) => [
+        ...prev,
+        `🧑 You: ${query}`,
+        `🤖 Bot: ${response}`
+      ]);
 
-exports.loginUser = async (req, res) => {
-  try {
-    const { username, password } = req.body;
+      // Update state/session
+      setChatState(state);
+      setSessionId(session_id);
+      setQuery('');
 
-    const response = await apiClient.post('/login', { username, password });
-    const { access_token } = response.data;
-
-    // Optionally store in cookie
-    res.cookie('access_token', access_token, {
-      httpOnly: true,
-      secure: false, // change to true in production
-      sameSite: 'lax'
-    });
-
-    return res.status(200).json(response.data);
-  } catch (error) {
-    console.error('[Login Error]', error.response?.data || error.message);
-    const status = error.response?.status || 500;
-    return res.status(status).json(error.response?.data || { error: 'Login failed' });
-  }
-};
-
-Chat Controller
-
-const apiClient = require('../utils/apiClient');
-
-exports.chatHandler = async (req, res) => {
-  try {
-    const token =
-      req.headers['authorization'] ||
-      `Bearer ${req.cookies?.access_token}`;
-
-    if (!token) {
-      return res.status(401).json({ detail: 'Authorization token missing' });
+      // Focus back to input
+      inputRef.current?.focus();
+    } catch (err) {
+      console.error('Chat error:', err);
+      alert('Something went wrong.');
     }
+  };
 
-    const response = await apiClient.post('/chat', req.body, {
-      headers: { Authorization: token }
-    });
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      sendMessage();
+    }
+  };
 
-    return res.status(200).json(response.data);
-  } catch (error) {
-    console.error('[Chat Error]', error.response?.data || error.message);
-    const status = error.response?.status || 500;
-    return res.status(status).json(error.response?.data || { error: 'Chat failed' });
-  }
+  return (
+    <div style={{ padding: '2rem', maxWidth: 600, margin: '0 auto' }}>
+      <h2>💬 Chat</h2>
+
+      <div
+        style={{
+          border: '1px solid #ccc',
+          padding: '1rem',
+          borderRadius: 8,
+          minHeight: 200,
+          marginBottom: '1rem',
+          whiteSpace: 'pre-wrap'
+        }}
+      >
+        {messages.length === 0 ? (
+          <p style={{ color: '#aaa' }}>Start the conversation...</p>
+        ) : (
+          messages.map((msg, i) => <div key={i}>{msg}</div>)
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Type your message..."
+        style={{
+          width: '100%',
+          padding: '0.75rem',
+          fontSize: '1rem',
+          borderRadius: 4,
+          border: '1px solid #ccc'
+        }}
+      />
+
+      {sessionId && (
+        <p style={{ fontSize: '0.85rem', marginTop: 10, color: '#666' }}>
+          🧾 Session ID: {sessionId}
+        </p>
+      )}
+    </div>
+  );
 };
 
-const express = require('express');
-const router = express.Router();
-const { loginUser } = require('../controllers/authController');
-
-router.post('/login', loginUser);
-
-module.exports = router;
-
-const express = require('express');
-const router = express.Router();
-const { chatHandler } = require('../controllers/chatController');
-
-router.post('/chat', chatHandler);
-
-module.exports = router;
+export default Chat;
