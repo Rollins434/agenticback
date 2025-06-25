@@ -1,99 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
-import api from './api';
+@app.post("/chat")
+async def chat_endpoint(request: Request, authorization: str | None = Header(None)):
+    # Skip token verification for now
+    if not authorization or not authorization.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "Access token required"})
 
-const Chat: React.FC = () => {
-  const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState<string[]>([]);
-  const [chatState, setChatState] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+    # Parse the request data
+    data = await request.json()
+    stream = data.get("stream", False)  # Check if streaming is requested
 
-  const sendMessage = async () => {
-    if (!query.trim()) return;
+    # Run the chat logic
+    result = await run_chat(request)
 
-    const payload: any = { query };
-    if (chatState) payload.state = chatState;
-
-    try {
-      const res = await api.post('/chat', payload, {
-        headers: {
-          // Optional if using cookie-based auth
-          // Authorization: `Bearer ${token}`
-        }
-      });
-
-      const { response, state, session_id } = res.data;
-
-      // Add user + bot message
-      setMessages((prev) => [
-        ...prev,
-        `🧑 You: ${query}`,
-        `🤖 Bot: ${response}`
-      ]);
-
-      // Update state/session
-      setChatState(state);
-      setSessionId(session_id);
-      setQuery('');
-
-      // Focus back to input
-      inputRef.current?.focus();
-    } catch (err) {
-      console.error('Chat error:', err);
-      alert('Something went wrong.');
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      sendMessage();
-    }
-  };
-
-  return (
-    <div style={{ padding: '2rem', maxWidth: 600, margin: '0 auto' }}>
-      <h2>💬 Chat</h2>
-
-      <div
-        style={{
-          border: '1px solid #ccc',
-          padding: '1rem',
-          borderRadius: 8,
-          minHeight: 200,
-          marginBottom: '1rem',
-          whiteSpace: 'pre-wrap'
-        }}
-      >
-        {messages.length === 0 ? (
-          <p style={{ color: '#aaa' }}>Start the conversation...</p>
-        ) : (
-          messages.map((msg, i) => <div key={i}>{msg}</div>)
-        )}
-      </div>
-
-      <input
-        ref={inputRef}
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Type your message..."
-        style={{
-          width: '100%',
-          padding: '0.75rem',
-          fontSize: '1rem',
-          borderRadius: 4,
-          border: '1px solid #ccc'
-        }}
-      />
-
-      {sessionId && (
-        <p style={{ fontSize: '0.85rem', marginTop: 10, color: '#666' }}>
-          🧾 Session ID: {sessionId}
-        </p>
-      )}
-    </div>
-  );
-};
-
-export default Chat;
+    # Handle streaming response
+    if stream:
+        return StreamingResponse(result, media_type="text/plain")
+    else:
+        return JSONResponse(result)
