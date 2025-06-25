@@ -1,18 +1,84 @@
-@app.post("/chat")
-async def chat_endpoint(request: Request, authorization: str | None = Header(None)):
-    # Skip token verification for now
-    if not authorization or not authorization.startswith("Bearer "):
-        return JSONResponse(status_code=401, content={"detail": "Access token required"})
+const axios = require('axios');
+const { default: Axios } = require('axios');
 
-    # Parse the request data
-    data = await request.json()
-    stream = data.get("stream", False)  # Check if streaming is requested
+exports.streamChatHandler = async (req, res) => {
+  try {
+    const token =
+      req.headers['authorization'] || `Bearer ${req.cookies?.access_token}`;
 
-    # Run the chat logic
-    result = await run_chat(request)
+    if (!token) {
+      return res.status(401).json({ error: 'Authorization token missing' });
+    }
 
-    # Handle streaming response
-    if stream:
-        return StreamingResponse(result, media_type="text/plain")
-    else:
-        return JSONResponse(result)
+    // Make a POST request with stream enabled
+    const response = await Axios({
+      method: 'post',
+      url: `${process.env.FASTAPI_BASE_URL}/chat`,
+      data: { ...req.body, stream: true },
+      headers: {
+        Authorization: token,
+        'Content-Type': 'application/json',
+      },
+      responseType: 'stream',
+    });
+
+    // Forward streaming headers to client
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // Pipe the FastAPI stream to React
+    response.data.pipe(res);
+
+    response.data.on('end', () => {
+      res.end();
+    });
+
+    response.data.on('error', (err) => {
+      console.error('Error during stream:', err);
+      res.end();
+    });
+  } catch (err) {
+    console.error('[Node Stream Error]', err.message || err);
+    res.status(500).json({ error: 'Stream proxy failed' });
+  }
+};
+
+
+const sendStreamRequest = async () => {
+  const res = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // 'Authorization': `Bearer ${token}` if needed
+    },
+    body: JSON.stringify({ query: 'Hello!', stream: true }),
+  });
+
+  const reader = res.body?.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let partial = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value);
+    partial += chunk;
+
+    const lines = partial.split('\n');
+    partial = lines.pop() ?? '';
+
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        const eventType = line.slice(6).trim();
+        continue; // or handle event if needed
+      }
+      if (line.startsWith('data:')) {
+        const payload = line.slice(5).trim();
+        console.log('Stream data:', payload);
+        // You can update UI here (append to chat)
+      }
+    }
+  }
+};
